@@ -1,0 +1,989 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>치즈 새총 게임</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, Pretendard, "Noto Sans KR", sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; overflow:hidden; color:#f4f5ff; background:radial-gradient(ellipse at 50% 35%, #31375e 0, #171a30 52%, #10111d 100%); }
+    canvas { display:block; width:100%; height:100%; touch-action:none; }
+    .label { position:fixed; z-index:2; left:28px; top:24px; pointer-events:none; }
+    h1 { margin:0 0 6px; font-size:clamp(20px, 3vw, 28px); letter-spacing:-.04em; }
+    p.sub { margin:0; color:#b8bfdc; font-size:13px; }
+    .hud { position:fixed; z-index:2; right:28px; top:24px; text-align:right; pointer-events:none; }
+    .score { font-size:22px; font-weight:700; letter-spacing:-.02em; }
+    .score small { font-size:12px; color:#b8bfdc; font-weight:400; display:block; }
+    .lives { margin-top:10px; display:flex; gap:5px; justify-content:flex-end; }
+    .lives img { width:34px; height:34px; object-fit:contain; transition:opacity .3s ease, filter .3s ease; image-rendering:auto; }
+    .lives img.lost { opacity:.22; filter:grayscale(1); }
+    .tip { position:fixed; z-index:2; bottom:22px; left:50%; transform:translateX(-50%); padding:10px 16px; border:1px solid #ffffff20; border-radius:99px; background:#111426b8; color:#d9def5; font-size:13px; white-space:nowrap; backdrop-filter:blur(10px); pointer-events:none; }
+    /* 발사 결과 플래시 — 중앙 대형 텍스트, 2.5초 후 자동 소멸 */
+    #flash { position:fixed; inset:0; z-index:8; display:flex; align-items:center; justify-content:center; pointer-events:none; opacity:0; }
+    #flash.show { animation: flashInOut 2.5s ease forwards; }
+    @keyframes flashInOut {
+      0%   { opacity:0; transform:scale(.7); }
+      12%  { opacity:1; transform:scale(1.05); }
+      20%  { transform:scale(1); }
+      75%  { opacity:1; }
+      100% { opacity:0; transform:scale(1.08); }
+    }
+    #flash span {
+      font-size:clamp(48px, 9vw, 88px); font-weight:900; letter-spacing:-.06em;
+      text-shadow: 0 4px 40px #00000090, 0 0 80px currentColor;
+    }
+    #flash.win span  { color:#ffe27a; }
+    #flash.lose span { color:#ff8f8f; }
+    #flash.miss span { color:#c9d2f0; }
+    .overlay { position:fixed; inset:0; z-index:5; display:flex; align-items:center; justify-content:center; background:#0c0e1acc; backdrop-filter:blur(6px); opacity:0; pointer-events:none; transition:opacity .25s ease; }
+    .overlay.show { opacity:1; pointer-events:auto; }
+    .card { text-align:center; padding:34px 46px; border:1px solid #ffffff22; border-radius:20px; background:#171a30ee; box-shadow:0 20px 60px #00000066; }
+    .card h2 { margin:0 0 6px; font-size:34px; letter-spacing:-.04em; }
+    .card p { margin:0 0 20px; color:#b8bfdc; font-size:14px; }
+    .card .btns { display:flex; gap:10px; justify-content:center; flex-wrap:wrap; }
+    .card button { font:inherit; font-size:15px; font-weight:600; padding:11px 26px; border:0; border-radius:99px; cursor:pointer; background:#f2d453; color:#23253a; transition:filter .15s ease, transform .1s ease; }
+    .card button:hover { filter:brightness(1.08); }
+    .card button:active { transform:scale(.97); }
+    .card button.home { background:transparent; color:#b8bfdc; border:1px solid #ffffff33; }
+    .card button.home:hover { border-color:#ffffff66; color:#eef1ff; }
+    .win h2 { color:#ffe27a; }
+    .lose h2 { color:#ff8f8f; }
+    .miss h2 { color:#c9d2f0; }
+    /* ===== 게임 오버 최종 점수 강조 ===== */
+    .final-score { display:none; margin:0 0 24px; padding:18px 36px 22px; border-radius:16px; background:linear-gradient(135deg,#1e2244 0%,#2a2f5a 50%,#1e2244 100%); border:1px solid #f2d45330; box-shadow:0 0 40px #f2d45315, inset 0 1px 0 #ffffff10; flex-direction:column; align-items:center; gap:2px; }
+    .final-score.show { display:flex; animation:scorePop .5s cubic-bezier(.175,.885,.32,1.275) both; }
+    @keyframes scorePop { 0% { transform:scale(.6); opacity:0; } 100% { transform:scale(1); opacity:1; } }
+    .fs-label { font-size:12px; font-weight:600; letter-spacing:.12em; text-transform:uppercase; color:#8890b0; }
+    .fs-value { font-size:clamp(52px,8vw,72px); font-weight:800; line-height:1.1; letter-spacing:-.04em; background:linear-gradient(135deg,#ffe27a 0%,#fff5c0 40%,#f2d453 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; filter:drop-shadow(0 0 20px #f2d45350); }
+    .fs-unit { font-size:18px; font-weight:700; color:#ffe27a; margin-left:2px; }
+    /* 각도/세기 게이지 CSS 제거됨 — 드래그 전용 조작 */
+    /* ===== 스플래시 화면 ===== */
+    #splash { position:fixed; inset:0; z-index:100; display:flex; flex-direction:column; align-items:center; justify-content:center; overflow:hidden; background:radial-gradient(ellipse at 50% 30%, #2a3060 0%, #171a30 50%, #0d0e18 100%); transition:opacity .8s ease, visibility .8s; }
+    #splash.hidden { opacity:0; visibility:hidden; pointer-events:none; }
+    #splash::before { content:''; position:absolute; inset:-50%; background:conic-gradient(from 0deg, transparent 0%, #f2d45308 10%, transparent 20%, #8fa3ff06 35%, transparent 45%, #f2d45306 60%, transparent 70%, #8fa3ff08 85%, transparent 95%); animation:splashRotate 20s linear infinite; }
+    @keyframes splashRotate { to { transform:rotate(360deg); } }
+    .splash-particles { position:absolute; inset:0; pointer-events:none; }
+    .splash-particle { position:absolute; width:6px; height:6px; border-radius:50%; background:#f2d453; opacity:.6; animation:particleFloat var(--dur) ease-in-out infinite alternate; }
+    @keyframes particleFloat { 0% { transform:translateY(0) scale(1); opacity:.3; } 100% { transform:translateY(var(--rise)) scale(.4); opacity:.8; } }
+    .splash-cheese { position:relative; z-index:2; width:160px; height:150px; margin-bottom:28px; filter:drop-shadow(0 10px 40px #f2d45350); animation:cheeseBounce 3s ease-in-out infinite; }
+    @keyframes cheeseBounce { 0%,100% { transform:translateY(0) rotate(-5deg); } 50% { transform:translateY(-14px) rotate(5deg); } }
+    .splash-title { position:relative; z-index:2; margin:0 0 8px; font-size:clamp(36px,6vw,56px); font-weight:800; letter-spacing:-.05em; background:linear-gradient(135deg,#ffe27a 0%,#f2d453 40%,#fff5c0 100%); -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text; text-shadow:0 0 60px #f2d45330; }
+    .splash-sub { position:relative; z-index:2; margin:0 0 40px; font-size:15px; color:#b8bfdc; letter-spacing:.02em; }
+    .splash-btn { position:relative; z-index:2; font:inherit; font-size:18px; font-weight:700; padding:16px 52px; border:0; border-radius:99px; cursor:pointer; color:#1a1c30; background:linear-gradient(135deg,#ffe27a,#f2d453); box-shadow:0 4px 24px #f2d45340, inset 0 1px 0 #ffffff50; transition:transform .2s, box-shadow .2s; }
+    .splash-btn:hover { transform:scale(1.06); box-shadow:0 6px 36px #f2d45360, inset 0 1px 0 #ffffff50; }
+    .splash-btn:active { transform:scale(.97); }
+    .splash-hint { position:relative; z-index:2; margin-top:20px; font-size:12px; color:#8890b0; }
+  </style>
+  <script type="importmap">
+    {"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"}}
+  </script>
+</head>
+<body>
+  <div class="label"><h1>치즈 새총</h1><p class="sub">고양이가 치즈를 쏴 바구니에 넣기 · 쥐가 가로채면 실패</p></div>
+  <div class="hud">
+    <div class="score"><span id="score">0</span>점<small>바구니에 넣은 개수</small></div>
+    <div class="lives" id="lives"></div>
+  </div>
+  <div class="tip" id="tip">치즈를 뒤로 드래그해 새총을 당기고 놓으면 발사됩니다</div>
+  <div id="flash"><span></span></div>
+  <div class="overlay" id="overlay">
+    <div class="card" id="card">
+      <h2 id="resultTitle">성공!</h2>
+      <p id="resultMsg">치즈가 바구니에 들어갔어요.</p>
+      <div class="final-score" id="finalScore"><span class="fs-label">최종 점수</span><span class="fs-value" id="finalScoreValue">0</span><span class="fs-unit">점</span></div>
+      <div class="btns">
+        <button id="restartBtn">다시 시작</button>
+        <button id="homeBtn" class="home">홈으로</button>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+    import * as THREE from 'three';
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#20243b');
+    scene.fog = new THREE.Fog('#20243b', 18, 40);
+    const viewHeight = 9.5;
+    const camera = new THREE.OrthographicCamera(-viewHeight*innerWidth/innerHeight/2, viewHeight*innerWidth/innerHeight/2, viewHeight/2, -viewHeight/2, .1, 100);
+    camera.position.set(0, 6.5, 14);
+    camera.lookAt(0, 2.2, 0);
+    const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:false });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.12;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight('#d9e3ff', '#4c3b51', 2.0));
+    const key = new THREE.DirectionalLight('#fff1d5', 2.6);
+    key.position.set(-4, 10, 8); scene.add(key);
+    const rim = new THREE.PointLight('#8394ff', 8, 20);
+    rim.position.set(6, 5, -6); scene.add(rim);
+
+    const shadeMap = new THREE.DataTexture(new Uint8Array([105,105,105, 180,180,180, 255,255,255]), 3, 1, THREE.RGBFormat);
+    shadeMap.minFilter = THREE.NearestFilter; shadeMap.magFilter = THREE.NearestFilter;
+    shadeMap.generateMipmaps = false; shadeMap.needsUpdate = true;
+    const mat = (color) => new THREE.MeshToonMaterial({ color, gradientMap: shadeMap, flatShading: true });
+
+    function ellipsoid(parent, material, pos, scale, seg=32, outlined=false) {
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, seg, Math.max(16, seg/2)), material);
+      mesh.position.set(...pos); mesh.scale.set(...scale);
+      if (outlined) {
+        const edge = new THREE.Mesh(mesh.geometry, new THREE.MeshBasicMaterial({ color:'#344052', side:THREE.BackSide }));
+        edge.position.copy(mesh.position); edge.quaternion.copy(mesh.quaternion); edge.scale.copy(mesh.scale).multiplyScalar(1.025);
+        parent.add(edge);
+      }
+      parent.add(mesh); return mesh;
+    }
+    function rod(parent, material, a, b, radius, radius2=radius, sides=16) {
+      const start = new THREE.Vector3(...a), end = new THREE.Vector3(...b), delta = end.clone().sub(start);
+      const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radius2, radius, delta.length(), sides), material);
+      mesh.position.copy(start.add(end).multiplyScalar(.5));
+      mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), delta.normalize());
+      parent.add(mesh); return mesh;
+    }
+    function tube(parent, material, points, radius, tubular=48) {
+      const curve = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
+      const mesh = new THREE.Mesh(new THREE.TubeGeometry(curve, tubular, radius, 12, false), material);
+      parent.add(mesh); return mesh;
+    }
+
+    // ===== 고양이 (references/cat-slingshot.html에서 통합) =====
+    const fur = mat('#71869f'), furLight = mat('#91a3b8'), innerEar = mat('#e99d9d');
+    const cream = mat('#f3eee5'), white = mat('#fff9e9'), eyeGold = mat('#f2d453'), black = mat('#282531');
+    const wood = mat('#a96637'), woodLight = mat('#d09054'), band = mat('#f06468');
+    const pink = mat('#ed8291');
+    const cat = new THREE.Group(); scene.add(cat);
+    ellipsoid(cat, fur, [0,1.48,0], [.62,1.10,.47], 32, true);
+    ellipsoid(cat, cream, [0,1.43,.38], [.43,.69,.16], 32, true);
+    ellipsoid(cat, fur, [0,2.88,0], [.90,.76,.62], 40, true);
+    for (const s of [-1,1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(.34,.82,3), fur);
+      ear.position.set(s*.63,3.53,-.01); ear.rotation.z = s*-.16; ear.rotation.x = -.14;
+      cat.add(ear);
+      const inner = new THREE.Mesh(new THREE.ConeGeometry(.19,.53,3), innerEar);
+      inner.position.set(s*.63,3.51,.205); inner.rotation.z = s*-.16; inner.rotation.x = -.14;
+      cat.add(inner);
+    }
+    ellipsoid(cat, eyeGold, [-.34,2.99,.535], [.31,.35,.15]);
+    ellipsoid(cat, eyeGold, [.34,2.99,.535], [.31,.35,.15]);
+    ellipsoid(cat, black, [-.24,2.98,.668], [.09,.19,.055]);
+    ellipsoid(cat, black, [.24,2.98,.668], [.09,.19,.055]);
+    ellipsoid(cat, white, [-.265,3.06,.716], [.027,.05,.02]);
+    ellipsoid(cat, white, [.215,3.06,.716], [.027,.05,.02]);
+    tube(cat, fur, [[-.68,3.34,.48],[-.39,3.40,.59],[-.10,3.34,.61]], .055, 18);
+    tube(cat, fur, [[.68,3.34,.48],[.39,3.40,.59],[.10,3.34,.61]], .055, 18);
+    ellipsoid(cat, cream, [-.18,2.62,.55], [.30,.21,.22], 32, true);
+    ellipsoid(cat, cream, [.18,2.62,.55], [.30,.21,.22], 32, true);
+    const nose = new THREE.Mesh(new THREE.SphereGeometry(.105,20,14), pink);
+    nose.scale.set(1.25,.82,.7); nose.position.set(0,2.70,.755); cat.add(nose);
+    tube(cat, black, [[0,2.61,.76],[0,2.50,.79],[-.11,2.46,.78]], .022, 16);
+    tube(cat, black, [[0,2.50,.79],[.10,2.46,.78],[.18,2.49,.76]], .022, 16);
+    for (const s of [-1,1]) {
+      for (const [x,y] of [[.30,2.62],[.38,2.56],[.28,2.51]]) ellipsoid(cat, mat('#73747b'), [s*x,y,.73], [.018,.018,.012], 12);
+      tube(cat, white, [[s*.34,2.61,.70],[s*.74,2.68,.61],[s*1.13,2.75,.47]], .012, 16);
+      tube(cat, white, [[s*.36,2.55,.70],[s*.81,2.54,.60],[s*1.18,2.48,.45]], .012, 16);
+      tube(cat, white, [[s*.34,2.50,.69],[s*.76,2.41,.59],[s*1.08,2.32,.45]], .012, 16);
+    }
+    // 양팔 — 어깨가 그룹 원점, 발사 시 가운데로 모으기 위해 각도 0 = 기본 자세
+    const armL = new THREE.Group(); armL.position.set(-.48,2.02,0); cat.add(armL);
+    rod(armL, fur, [0,0,0], [-.40,-.26,.18], .16,.14);
+    ellipsoid(armL, cream, [-.43,-.28,.20], [.19,.14,.16]);
+    const armR = new THREE.Group(); armR.position.set(.47,2.08,.04); cat.add(armR);
+    rod(armR, fur, [0,0,0], [.40,-.22,.40], .16,.13);
+    ellipsoid(armR, cream, [.43,-.24,.43], [.18,.14,.16]);
+    for (const s of [-1,1]) {
+      rod(cat, fur, [s*.34,.68,0], [s*.38,.20,.02], .18,.14);
+      ellipsoid(cat, cream, [s*.42,.14,.18], [.31,.14,.38]);
+      for (let i=-1;i<=1;i++) tube(cat, furLight, [[s*.42+i*.085,.12,.48],[s*.42+i*.085,.10,.52]], .009, 8);
+    }
+    const tail = new THREE.Group(); tail.position.set(0,.95,-.30); cat.add(tail);
+    tube(tail, fur, [[0,0,0],[.55,.08,-.25],[1.08,.40,-.34],[1.38,.88,-.22],[1.27,1.19,-.08]], .085, 52);
+    ellipsoid(tail, fur, [1.27,1.19,-.08], [.10,.12,.10]);
+    for (let i=0;i<3;i++) {
+      tube(cat, mat('#53657c'), [[-.83,2.92-i*.12,.28],[-.73,2.90-i*.12,.45],[-.63,2.88-i*.12,.51]], .022, 12);
+    }
+    for (const y of [.25,.53,.81]) tube(tail, mat('#53657c'), [[.90,y,-.36],[1.02,y+.04,-.34],[1.13,y+.08,-.31]], .025, 10);
+
+    // 새총 — 당겨지는 고무줄(bandMesh)과 포대(pouch)를 별도 메쉬로 만들어 조작 시 변형
+    const sling = new THREE.Group(); sling.position.set(.87,1.78,.38); sling.rotation.z = -.20; cat.add(sling);
+    rod(sling, wood, [0,-.62,0], [0,.27,0], .105,.075);
+    rod(sling, wood, [0,.20,0], [-.38,.66,0], .09,.07);
+    rod(sling, wood, [0,.20,0], [.38,.66,0], .09,.07);
+    ellipsoid(sling, woodLight, [0,-.65,0], [.13,.09,.12]);
+    const forkL = new THREE.Vector3(-.38,.66,.015), forkR = new THREE.Vector3(.38,.66,.015);
+    let bandMesh = null, pouch = null;
+    function setBand(pullPoint) {
+      if (bandMesh) { sling.remove(bandMesh); bandMesh.geometry.dispose(); }
+      const mid = pullPoint.clone().lerp(forkL.clone(), .5);
+      const pts = [forkL, mid, pullPoint, mid.clone().lerp(forkR, 1), forkR];
+      const curve = new THREE.CatmullRomCurve3(pts);
+      bandMesh = new THREE.Mesh(new THREE.TubeGeometry(curve, 24, .035, 10, false), band);
+      sling.add(bandMesh);
+      if (pouch) { sling.remove(pouch); pouch.geometry.dispose(); }
+      pouch = ellipsoid(sling, mat('#edc85f'), [pullPoint.x, pullPoint.y, pullPoint.z+.02], [.12,.11,.08]);
+    }
+    const restPull = new THREE.Vector3(0,.34,.12);
+    setBand(restPull);
+
+    cat.position.set(-5, 0, 0);
+    cat.rotation.y = Math.PI * .12;
+
+    // ===== 쥐 (references/jerry-mouse.html에서 통합, 팩토리로 2마리 생성) =====
+    const mFur = mat('#b8743f'), mFurDark = mat('#805033'), mInner = mat('#e99398');
+    const mTan = mat('#f0c98d'), mCream = mat('#f7e5c5'), mWhite = mat('#fff8e7');
+    const mBlack = mat('#2c2528'), mPink = mat('#e87986');
+    function makeMouse() {
+      const mouse = new THREE.Group();
+      ellipsoid(mouse, mFur, [0,.68,-.08], [.39,.36,.68], 32, true);
+      ellipsoid(mouse, mTan, [0,.67,.18], [.27,.24,.49], 32, true);
+      ellipsoid(mouse, mFur, [0,1.23,.46], [.49,.43,.42], 40, true);
+      const earParts = [];
+      for (const s of [-1,1]) {
+        const ear = new THREE.Group(); ear.position.set(s*.39,1.53,.39); mouse.add(ear); earParts.push(ear);
+        ellipsoid(ear, mFur, [s*.12,.10,0], [.32,.35,.13], 32, true);
+        ellipsoid(ear, mInner, [s*.12,.10,.105], [.235,.265,.055]);
+        ellipsoid(ear, mat('#f4b6b2'), [s*.12,.10,.15], [.15,.19,.022]);
+      }
+      ellipsoid(mouse, mTan, [0,1.25,.735], [.36,.31,.13], 36);
+      ellipsoid(mouse, mWhite, [-.16,1.34,.80], [.145,.17,.075]);
+      ellipsoid(mouse, mWhite, [.16,1.34,.80], [.145,.17,.075]);
+      ellipsoid(mouse, mBlack, [-.12,1.33,.895], [.04,.078,.025]);
+      ellipsoid(mouse, mBlack, [.18,1.33,.895], [.04,.078,.025]);
+      ellipsoid(mouse, mCream, [-.10,1.14,.89], [.17,.12,.15]);
+      ellipsoid(mouse, mCream, [.10,1.14,.89], [.17,.12,.15]);
+      ellipsoid(mouse, mPink, [0,1.20,1.015], [.075,.052,.045]);
+      for (const s of [-1,1]) {
+        ellipsoid(mouse, mFurDark, [s*.18,1.14,.97], [.012,.012,.009], 12);
+        ellipsoid(mouse, mFurDark, [s*.22,1.10,.95], [.012,.012,.009], 12);
+        tube(mouse, mCream, [[s*.19,1.15,.96],[s*.48,1.21,.79],[s*.78,1.27,.59]], .008, 16);
+        tube(mouse, mCream, [[s*.20,1.12,.96],[s*.50,1.11,.77],[s*.82,1.10,.56]], .008, 16);
+        tube(mouse, mCream, [[s*.19,1.09,.95],[s*.46,1.02,.76],[s*.75,.97,.55]], .008, 16);
+      }
+      const legParts = [];
+      for (const s of [-1,1]) {
+        // 앞다리 (hip y=.66, z=+.35) — 그룹 원점은 고관절
+        const fLeg = new THREE.Group(); fLeg.position.set(s*.24,.66,.35); mouse.add(fLeg);
+        rod(fLeg, mFur, [0,0,0],[s*.05,-.41,.32],.105,.075);
+        ellipsoid(fLeg, mTan, [s*.06,-.49,.38], [.17,.09,.22]);
+        for (let i=-1;i<=1;i++) tube(fLeg, mCream, [[s*.06+i*.055,-.53,.54],[s*.06+i*.055,-.55,.58]], .007, 8);
+        legParts.push({ g: fLeg, phase: s>0 ? 0 : Math.PI });
+        // 뒷다리 (hip y=.62, z=-.35)
+        const bLeg = new THREE.Group(); bLeg.position.set(s*.25,.62,-.35); mouse.add(bLeg);
+        rod(bLeg, mFur, [0,0,0],[s*.06,-.38,-.21],.12,.085);
+        ellipsoid(bLeg, mTan, [s*.07,-.46,-.27], [.18,.09,.22]);
+        legParts.push({ g: bLeg, phase: s>0 ? Math.PI : 0 });
+      }
+      const tailG = new THREE.Group(); tailG.position.set(0,.68,-.66); mouse.add(tailG);
+      tube(tailG, mPink, [[0,0,0],[0,.06,-.36],[.06,.16,-.76],[.20,.36,-1.12],[.38,.43,-1.40],[.52,.34,-1.60]], .026, 64);
+      // 기어다니던 쥐의 몸통·머리·귀 — 박수 쥐로 변신 시 숨겨 새 상체와 겹치지 않게 함
+      const crawlParts = [];
+      for (const c of mouse.children) if (!c.userData.keepOnCheer) crawlParts.push(c);
+      // 박수 쥐 하체 (references/jerry-thumbs-up.html에서 통합) — 기본 hidden
+      const cheerBody = new THREE.Group(); mouse.add(cheerBody);
+      ellipsoid(cheerBody, mFur, [0,1.02,-.02], [.43,.68,.34], 40);
+      ellipsoid(cheerBody, mTan, [0,1.02,.255], [.31,.51,.16], 36);
+      ellipsoid(cheerBody, mFur, [0,1.91,.10], [.53,.47,.44], 40);
+      for (const s of [-1,1]) {
+        ellipsoid(cheerBody, mFur, [s*.50,2.35,.02], [.34,.37,.13], 32);
+        ellipsoid(cheerBody, mInner, [s*.50,2.35,.125], [.245,.27,.055], 32);
+        ellipsoid(cheerBody, mat('#f4b6b2'), [s*.50,2.35,.17], [.15,.19,.022], 28);
+      }
+      ellipsoid(cheerBody, mTan, [0,1.91,.475], [.38,.30,.13], 36);
+      ellipsoid(cheerBody, mWhite, [-.16,2.01,.56], [.145,.17,.075]);
+      ellipsoid(cheerBody, mWhite, [.16,2.01,.56], [.145,.17,.075]);
+      ellipsoid(cheerBody, mBlack, [-.12,2.00,.635], [.04,.078,.025]);
+      ellipsoid(cheerBody, mBlack, [.18,2.00,.635], [.04,.078,.025]);
+      ellipsoid(cheerBody, mCream, [-.10,1.82,.63], [.17,.12,.14]);
+      ellipsoid(cheerBody, mCream, [.10,1.82,.63], [.17,.12,.14]);
+      ellipsoid(cheerBody, mPink, [0,1.88,.75], [.075,.052,.045]);
+      ellipsoid(cheerBody, mFur, [-.16,2.105,.625], [.15,.072,.035], 28);
+      ellipsoid(cheerBody, mFur, [.16,2.105,.625], [.15,.072,.035], 28);
+      tube(cheerBody, mFurDark, [[-.29,2.17,.645],[-.16,2.135,.66],[-.04,2.15,.65]], .014, 14);
+      tube(cheerBody, mFurDark, [[.04,2.15,.65],[.16,2.135,.66],[.29,2.17,.645]], .014, 14);
+      ellipsoid(cheerBody, mBlack, [0,1.715,.635], [.145,.072,.032], 30);
+      ellipsoid(cheerBody, mPink, [.055,1.705,.668], [.085,.035,.022], 26);
+      tube(cheerBody, mat('#9ee7f3'), [[.135,1.705,.66],[.175,1.63,.675],[.17,1.565,.67]], .014, 14);
+      ellipsoid(cheerBody, mat('#9ee7f3'), [.17,1.535,.67], [.028,.043,.024], 20);
+      for (const s of [-1,1]) {
+        tube(cheerBody, mCream, [[s*.19,1.83,.67],[s*.48,1.89,.56],[s*.74,1.96,.40]], .008, 16);
+        tube(cheerBody, mCream, [[s*.20,1.80,.67],[s*.49,1.79,.55],[s*.77,1.78,.39]], .008, 16);
+        tube(cheerBody, mCream, [[s*.19,1.77,.66],[s*.46,1.70,.54],[s*.72,1.64,.39]], .008, 16);
+      }
+      for (const s of [-1,1]) {
+        rod(cheerBody, mFur, [s*.19,.52,-.02], [s*.23,.24,.02], .125,.105);
+        ellipsoid(cheerBody, mTan, [s*.24,.14,.19], [.20,.12,.32]);
+        for (let toe=0;toe<3;toe++) {
+          const tx=s*.24+(toe-1)*.085;
+          tube(cheerBody, mCream, [[tx,.09,.37],[tx,.085,.42]], .009, 8);
+        }
+      }
+      rod(cheerBody, mFur, [-.34,1.43,.02], [-.53,1.50,.15], .115,.09);
+      rod(cheerBody, mFur, [-.53,1.50,.15], [-.16,1.48,.43], .09,.075);
+      rod(cheerBody, mFur, [.34,1.43,.02], [.53,1.50,.15], .115,.09);
+      rod(cheerBody, mFur, [.53,1.50,.15], [.16,1.48,.43], .09,.075);
+      const leftHand = new THREE.Group(); leftHand.position.set(-.105,1.48,.48); cheerBody.add(leftHand);
+      const rightHand = new THREE.Group(); rightHand.position.set(.105,1.48,.48); cheerBody.add(rightHand);
+      ellipsoid(leftHand, mTan, [0,0,0], [.10,.18,.075], 32);
+      ellipsoid(rightHand, mTan, [0,0,0], [.10,.18,.075], 32);
+      const cheerTail = new THREE.Group(); cheerTail.position.set(0,.50,-.25); cheerBody.add(cheerTail);
+      tube(cheerTail, mPink, [[0,0,0],[0,-.02,-.38],[.06,.05,-.78],[.20,.22,-1.12],[.38,.30,-1.40],[.52,.22,-1.60]], .026, 64);
+      cheerBody.visible = false;
+      return { group: mouse, earParts, tail: tailG, legs: legParts, crawlParts, cheerBody, leftHand, rightHand, cheerTail };
+    }
+    const mouseA = makeMouse(), mouseB = makeMouse();
+    scene.add(mouseA.group, mouseB.group);
+    // 크기 축소 요청: 쥐 .9 → .72 (약 80%)
+    mouseA.group.scale.setScalar(.72); mouseB.group.scale.setScalar(.72);
+
+    // ===== 치즈 (references/cheese.html에서 통합) =====
+    const cheeseShades = new THREE.DataTexture(new Uint8Array([112,105,82,185,170,105,255,245,190]),3,1,THREE.RGBFormat);
+    cheeseShades.minFilter = THREE.NearestFilter; cheeseShades.magFilter = THREE.NearestFilter;
+    cheeseShades.generateMipmaps = false; cheeseShades.needsUpdate = true;
+    const ctoon = (color) => new THREE.MeshToonMaterial({ color, gradientMap: cheeseShades, flatShading: true });
+    function makeCheese() {
+      const cheese = new THREE.Group();
+      const shape = new THREE.Shape();
+      shape.moveTo(-.91,.05); shape.lineTo(.89,.05);
+      shape.quadraticCurveTo(1.02,.06,.93,.18);
+      shape.lineTo(.29,1.19); shape.quadraticCurveTo(.22,1.31,.12,1.22);
+      shape.lineTo(-.91,.17); shape.quadraticCurveTo(-1.01,.08,-.91,.05);
+      const geometry = new THREE.ExtrudeGeometry(shape,{depth:.68,bevelEnabled:true,bevelSegments:3,steps:1,bevelSize:.06,bevelThickness:.05,curveSegments:10});
+      geometry.translate(0,0,-.36);
+      const outline = new THREE.Mesh(geometry,new THREE.MeshBasicMaterial({color:'#654522',side:THREE.BackSide}));
+      outline.scale.setScalar(1.025); cheese.add(outline);
+      cheese.add(new THREE.Mesh(geometry,ctoon('#f6c83c')));
+      const dimpleMat = new THREE.MeshToonMaterial({vertexColors:true,gradientMap:cheeseShades,flatShading:false,side:THREE.DoubleSide,depthTest:true,depthWrite:false});
+      const pitBottomMat = new THREE.MeshBasicMaterial({color:'#a96924',side:THREE.DoubleSide,depthTest:true,depthWrite:false});
+      const faceZ = .405;
+      function dimple(x,y,r,depth=.025,side=1){
+        const segments=40, rings=7, positions=[], colors=[], indices=[];
+        const dark=new THREE.Color('#a96924'), middle=new THREE.Color('#d99527'), edge=new THREE.Color('#f2c83d');
+        const pushVertex=(px,py,pz,color)=>{positions.push(px,py,pz);colors.push(color.r,color.g,color.b);};
+        pushVertex(x,y,side*(faceZ-depth),dark);
+        for(let ring=1;ring<=rings;ring++){
+          const t=ring/rings, radius=r*t;
+          const color=t<.55 ? dark.clone().lerp(middle,t/.55) : middle.clone().lerp(edge,(t-.55)/.45);
+          const z=side*(faceZ-depth*Math.pow(1-t,1.65));
+          for(let i=0;i<segments;i++){
+            const a=2*Math.PI*i/segments;
+            pushVertex(x+Math.cos(a)*radius,y+Math.sin(a)*radius,z,color);
+          }
+        }
+        const firstRing=1;
+        for(let i=0;i<segments;i++) indices.push(0,firstRing+i,firstRing+(i+1)%segments);
+        for(let ring=1;ring<rings;ring++){
+          const innerStart=1+(ring-1)*segments, outerStart=1+ring*segments;
+          for(let i=0;i<segments;i++){
+            const next=(i+1)%segments;
+            indices.push(innerStart+i,outerStart+i,innerStart+next, outerStart+i,outerStart+next,innerStart+next);
+          }
+        }
+        const geo=new THREE.BufferGeometry();
+        geo.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+        geo.setAttribute('color',new THREE.Float32BufferAttribute(colors,3));
+        geo.setIndex(indices); geo.computeVertexNormals();
+        const bowl=new THREE.Mesh(geo,dimpleMat); bowl.renderOrder=5; cheese.add(bowl);
+        const bottom=new THREE.Mesh(new THREE.CircleGeometry(r*.34,24),pitBottomMat);
+        bottom.position.set(x,y,side*(faceZ-depth+.002)); bottom.renderOrder=6; cheese.add(bottom);
+      }
+      dimple(-.42,.25,.135,.025,1); dimple(.36,.29,.16,.025,1); dimple(-.13,.53,.12,.025,1);
+      dimple(.34,.63,.115,.025,1); dimple(-.08,.91,.10,.025,1); dimple(.34,.98,.075,.02,1);
+      dimple(-.30,.23,.12,.025,-1); dimple(.40,.26,.13,.025,-1); dimple(-.10,.48,.145,.025,-1);
+      dimple(.36,.55,.12,.025,-1); dimple(-.22,.78,.105,.025,-1); dimple(.20,.93,.08,.02,-1);
+      cheese.scale.setScalar(.55);
+      return cheese;
+    }
+    const cheese = makeCheese();
+    scene.add(cheese);
+
+    // ===== 바구니 (references/basket.html에서 통합) =====
+    const bShades = new THREE.DataTexture(new Uint8Array([105,96,83,180,164,139,255,243,218]),3,1,THREE.RGBFormat);
+    bShades.minFilter = THREE.NearestFilter; bShades.magFilter = THREE.NearestFilter;
+    bShades.generateMipmaps = false; bShades.needsUpdate = true;
+    const btoon = (color) => new THREE.MeshToonMaterial({ color, gradientMap: bShades, flatShading: true, side: THREE.DoubleSide });
+    const wicker = btoon('#bd824d'), lightWicker = btoon('#d49b61'), darkWicker = btoon('#835633');
+    function makeBasket() {
+      const model = new THREE.Group();
+      function tubeB(parent,material,points,radius,tubular=48){
+        const curve=new THREE.CatmullRomCurve3(points.map(p=>new THREE.Vector3(...p)));
+        const mesh=new THREE.Mesh(new THREE.TubeGeometry(curve,tubular,radius,8,false),material); parent.add(mesh); return mesh;
+      }
+      const profile=[
+        new THREE.Vector2(.45,.18),new THREE.Vector2(.53,.12),new THREE.Vector2(.88,.79),
+        new THREE.Vector2(.91,.85),new THREE.Vector2(.83,.87),new THREE.Vector2(.78,.79),new THREE.Vector2(.48,.22)
+      ];
+      model.add(new THREE.Mesh(new THREE.LatheGeometry(profile,48),wicker));
+      const bottom=new THREE.Mesh(new THREE.CircleGeometry(.49,48),btoon('#a96f42'));
+      bottom.rotation.x=-Math.PI/2; bottom.position.y=.17; model.add(bottom);
+      const bands=[.20,.34,.48,.62,.76];
+      for(let i=0;i<bands.length;i++){
+        const y=bands[i], radius=.53+.43*((y-.12)/.73);
+        const band=new THREE.Mesh(new THREE.TorusGeometry(radius,.027,8,72),i%2?lightWicker:darkWicker);
+        band.rotation.x=Math.PI/2; band.position.y=y; model.add(band);
+      }
+      for(let i=0;i<18;i++){
+        const angle=2*Math.PI*i/18;
+        const points=[];
+        for(let j=0;j<=8;j++){
+          const y=.15+j*.085, radius=.53+.43*((y-.12)/.73)+.012*Math.sin(j*Math.PI/2+i*Math.PI);
+          points.push([Math.cos(angle)*radius,y,Math.sin(angle)*radius]);
+        }
+        tubeB(model,i%3===0?lightWicker:wicker,points,.022,36);
+      }
+      const lip=new THREE.Mesh(new THREE.TorusGeometry(.87,.065,12,80),lightWicker);
+      lip.rotation.x=Math.PI/2; lip.position.y=.86; model.add(lip);
+      const innerLip=new THREE.Mesh(new THREE.TorusGeometry(.78,.028,8,80),darkWicker);
+      innerLip.rotation.x=Math.PI/2; innerLip.position.y=.82; model.add(innerLip);
+      tubeB(model,darkWicker,[[-.80,.80,-.10],[-.87,1.12,-.12],[-.62,1.48,-.12],[0,1.64,-.12],[.62,1.48,-.12],[.87,1.12,-.12],[.80,.80,-.10]],.052,80);
+      tubeB(model,lightWicker,[[-.80,.80,-.10],[-.87,1.12,-.12],[-.62,1.48,-.12],[0,1.64,-.12],[.62,1.48,-.12],[.87,1.12,-.12],[.80,.80,-.10]],.018,80);
+      return model;
+    }
+    const basket = makeBasket();
+    scene.add(basket);
+
+    // ===== 장면 배치 =====
+    // 배치 후퇴 요청: 고양이 -5 → -6.5 (발사점 x=-4.13 기준 약 2.4 더 멀어짐)
+    const CAT_POS = new THREE.Vector3(-6.5, 0, 0);
+    // 배치 후퇴 요청: 바구니 5 → 6.5 (발사점 x=-4.13 기준 약 2.4 더 멀어짐)
+    const BASKET_POS = new THREE.Vector3(6.5, 0, 0);
+    cat.position.copy(CAT_POS);
+    // 크기 축소 요청: 고양이 1.0 → .8 (약 20% 축소) — 새총(sling)은 자식이라 함께 축소됨
+    cat.scale.setScalar(.8);
+    basket.position.copy(BASKET_POS);
+    // 크기 축소 요청: 바구니 1.0 → .8 (약 20% 축소)
+    basket.scale.setScalar(.8);
+    // 발사 시작점: 새총 포대 세계 좌표
+    const launchBase = new THREE.Vector3();
+    sling.getWorldPosition(launchBase);
+    // 발사점 높이 1.8: 이전 2.46이면 G=-12와 함께 낮은 각도(20~50°)가 전부
+    //   바구니(x=5) 위로 아치걸어 들어와 "무조건 골인"이 됐다. 포대 수준으로 낮추되
+    //   너무 낮으면(G=-30, y=1.5) 세기 40%에서 x가 9.13을 못 가 골인이 불가능해져 1.8로 조정.
+    launchBase.y -= .3; launchBase.z += .12;
+
+    // 바닥
+    const floor = new THREE.Mesh(new THREE.CircleGeometry(200,64), mat('#252940'));
+    floor.rotation.x = -Math.PI/2; floor.position.y = -.12; scene.add(floor);
+    // 목표 표시: 바구니 입구 위 점선 원
+    const targetRing = new THREE.Mesh(new THREE.RingGeometry(.9,1.0,48), new THREE.MeshBasicMaterial({ color:'#ffe27a', side:THREE.DoubleSide, transparent:true, opacity:.5 }));
+    targetRing.rotation.x = -Math.PI/2; targetRing.position.set(BASKET_POS.x, .9, BASKET_POS.z); scene.add(targetRing);
+
+    // 쥐 배회 영역: 바구니(BASKET_POS=(3.8,0))와 다른 쥐의 궤적에서 모두 완전히 격리된 곳
+    // - A(0.8, 1.8): 진폭 0.9 → x∈[-0.1,1.7], z∈[0.9,2.7]
+    // - B(0.4,-1.8): 진폭 0.9 → x∈[-0.5,1.3], z∈[-2.7,-0.9]
+    // 두 궤적의 최소 상호 거리 ≈ 2.8 (몸통 반경 합 1.0보다 훨씬 큼 → 절대 겹치지 않음)
+    // 바구니까지의 최소 거리: A≈2.8, B≈3.3 (바구니 반경 1.0 + 여유 0.8 이상 → 절대 안쪽 못 들어감)
+    // 두 마리 궤적이 서로·바구니와 절대 겹치지 않게: 홈을 넓게 벌리고(z ±2.4) 진폭을 줄임(MOUSE_ORBIT_AMP)
+    // 배치 후퇴 요청: 쥐 홈 x 2.2 → 3.5 (바구니 6.5 기준 거리 4.3으로 벌어짐)
+    const mouseHomeA = new THREE.Vector3(3.5, 0, 2.4);
+    const mouseHomeB = new THREE.Vector3(3.5, 0, -2.4);
+    const MOUSE_ORBIT_AMP = { x: .9, z: .7 }; // 두 마리 공통 진폭 (홈 간격에 맞춰 축소)
+    mouseA.group.position.copy(mouseHomeA);
+    mouseB.group.position.copy(mouseHomeB);
+    const mouseState = [
+      { m: mouseA, home: mouseHomeA, t: Math.random()*10, speed: .55 },
+      { m: mouseB, home: mouseHomeB, t: Math.random()*10, speed: .7 }
+    ];
+
+    // ===== 게임 상태 =====
+    const G = -30;                 // 중력: -12이면 각도 20~50°가 전부 x≈4.2~5.8으로 수렴해 무조건 골인됨 → 정상 궤적으로
+    const MAX_POWER = 30;          // 최대 발사 속도
+    const MIN_ANGLE = 20, MAX_ANGLE = 80; // 도 단위
+    let angleDeg = 45, powerPct = .6;     // 0~1
+    let state = 'aim';             // aim | flying | eating | eaten | won | missed | gameover
+    let score = 0;                 // 바구니에 넣은 개수 = 최종 점수
+    const MAX_LIVES = 10;          // 치즈(생명) 최대 개수
+    let lives = MAX_LIVES;         // 남은 생명
+    let scoreResetNeeded = false;  // 게임 오버 후 "다시 시작" 시 점수·생명 초기화 플래그
+    const cheeseVel = new THREE.Vector3();
+    let eatTimer = 0, eatMouse = null, endTimer = 0, jumpHeight = 1.1;
+    // (박수 쥐는 기존 쥐의 cheerBody 하체로 변신 — 별도 객체 없음)
+
+    const overlay = document.getElementById('overlay');
+    const card = document.getElementById('card');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultMsg = document.getElementById('resultMsg');
+    const restartBtn = document.getElementById('restartBtn');
+    const homeBtn = document.getElementById('homeBtn');
+    const scoreEl = document.getElementById('score');
+    // 각도/세기 게이지 제거됨 — 드래그 전용 조작
+    const tip = document.getElementById('tip');
+
+    function updateHud() { /* 각도/세기 게이지 제거됨 */ }
+    const finalScoreEl = document.getElementById('finalScore');
+    const finalScoreValueEl = document.getElementById('finalScoreValue');
+    function showResult(kind, title, msg) {
+      card.className = 'card '+kind;
+      resultTitle.textContent = title;
+      if (kind === 'gameover') {
+        // 게임 오버: 점수 분리 강조 — msg는 설명만, 점수는 대형 그라데이션 블록
+        resultMsg.textContent = '치즈가 모두 사라졌어요!';
+        finalScoreValueEl.textContent = score;
+        finalScoreEl.style.display = '';
+        // 애니메이션 리셋
+        finalScoreEl.classList.remove('show');
+        void finalScoreEl.offsetWidth;
+        finalScoreEl.classList.add('show');
+      } else {
+        resultMsg.textContent = msg;
+        finalScoreEl.style.display = 'none';
+      }
+      overlay.classList.add('show');
+    }
+    function hideResult() {
+      overlay.classList.remove('show');
+      finalScoreEl.classList.remove('show');
+    }
+    // 발사 결과 플래시 — 중앙 대형 텍스트, 2.5초 후 자동 소멸 (CSS 애니메이션)
+    const flashEl = document.getElementById('flash');
+    let flashTimer = null;
+    function showFlash(kind, title) {
+      flashEl.className = '';           // 애니메이션 리셋
+      void flashEl.offsetWidth;         // reflow 강제
+      flashEl.className = kind + ' show';
+      flashEl.querySelector('span').textContent = title;
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { flashEl.className = ''; }, 2600);
+    }
+
+    // ===== 생명 (치즈 10개) =====
+    const livesEl = document.getElementById('lives');
+    // 독립 임시 씬 + 전용 렌더러로 3D 치즈 스냅샷 (메인 씬에 영향 없음)
+    function captureCheeseIcon() {
+      const SIZE = 256;
+      const tmpRenderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+      tmpRenderer.setPixelRatio(2);
+      tmpRenderer.setSize(SIZE, SIZE);
+      tmpRenderer.outputColorSpace = THREE.SRGBColorSpace;
+      tmpRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+      tmpRenderer.toneMappingExposure = 1.12;
+      const tmpScene = new THREE.Scene();
+      tmpScene.add(new THREE.HemisphereLight('#d9e3ff', '#4c3b51', 2.0));
+      const keyL = new THREE.DirectionalLight('#fff1d5', 2.6);
+      keyL.position.set(-4, 10, 8); tmpScene.add(keyL);
+      const rimL = new THREE.PointLight('#8394ff', 8, 20);
+      rimL.position.set(6, 5, -6); tmpScene.add(rimL);
+      const iconCheese = makeCheese();
+      iconCheese.position.set(0, 0.45, 0);
+      iconCheese.rotation.set(0.15, -0.3, 0);
+      tmpScene.add(iconCheese);
+      const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 50);
+      cam.position.set(0, 1.2, 4.2);
+      cam.lookAt(0, 0.45, 0);
+      tmpRenderer.render(tmpScene, cam);
+      const url = tmpRenderer.domElement.toDataURL('image/png');
+      tmpRenderer.dispose();
+      return url;
+    }
+    const CHEESE_ICON_URL = captureCheeseIcon();
+    for (let i = 0; i < MAX_LIVES; i++) {
+      const img = document.createElement('img');
+      img.src = CHEESE_ICON_URL;
+      img.alt = '치즈 생명';
+      livesEl.appendChild(img);
+    }
+    function updateLives() {
+      const icons = livesEl.children;
+      for (let i = 0; i < icons.length; i++) icons[i].classList.toggle('lost', i >= lives);
+    }
+    // 실패 시 1개 차감; 0이 되면 게임 오버
+    function loseLife(kind, title, msg, delaySec = 0) {
+      lives = Math.max(0, lives - 1);
+      updateLives();
+      if (lives <= 0) {
+        scoreResetNeeded = true;   // 다시 시작 시 점수·생명 전부 초기화
+        finish('gameover', '게임 오버!', '치즈가 모두 사라졌어요! 최종 점수: ' + score + '점', delaySec);
+      } else {
+        finish(kind, title, msg, delaySec);
+      }
+    }
+
+    function resetRound() {
+      clearTimeout(flashTimer);
+      flashEl.className = '';
+      // 게임 오버에서 다시 시작: 점수·생명을 전부 초기화하고 플래그 해제
+      if (scoreResetNeeded) {
+        score = 0; scoreEl.textContent = '0';
+        lives = MAX_LIVES;
+        updateLives();
+        scoreResetNeeded = false;
+      }
+      state = 'aim';
+      // 매 라운드 각도·세기 초기화 — 이전 값이 그대로 남아 무한 성공하는 것을 방지
+      angleDeg = 45; powerPct = 0;
+      cheese.visible = true;
+      cheese.position.copy(launchBase);
+      cheese.rotation.set(0,0,0);
+      // 버그 수정: eating 연출(691줄)이 치즈를 .05까지 축소하는데, 여기서 복원하지 않으면
+      //   다음 라운드부터 "완전 축소된" 치즈로 시작해 미스 시 바닥에 점처럼 남았다.
+      cheese.scale.setScalar(.55);
+      cheese.userData.eatTarget = null;
+      cheeseVel.set(0,0,0);
+      setBand(restPull);
+      grip = 0;
+      // 박수 쥐 복원: cheerBody 숨기고 기어다니던 쥐(몸통·머리·귀·다리·꼬리) 복원
+      if (eatMouse) {
+        eatMouse.m.cheerBody.visible = false;
+        for (const p of eatMouse.m.crawlParts) p.visible = true;
+      }
+      hideResult();
+      pendingFinish = null;
+      updateHud();
+    }
+    function launch() {
+      if (state !== 'aim') return;
+      const a = angleDeg * Math.PI/180;
+      // MAX_POWER(30) 이면 바구니(x거리 9.13)까지 못 가고 중간에 바닥에 떨어짐
+      // → 최대 속도 40으로 올려 실제 궤적이 바구니 입구에 닿게 한다
+      const speed = powerPct * 40;
+      // z 성분을 0으로: 이전 -speed*.18 은 입구 높이(y≈.86)를 지날 때 z를 -2.6~-3.7까지
+      //   밀어 치즈가 바구니 중심(z=0)에 절대 못 도달하게 했다 — 골인 불가의 주범.
+      //   쥐 가로채기는 dHoriz<1.0 조건이라 발사 직후(쥐 근처)에는 여전히 걸린다.
+      cheeseVel.set(Math.cos(a)*speed, Math.sin(a)*speed, 0);
+      state = 'flying';
+      tip.textContent = '치즈가 날아갑니다!';
+    }
+    restartBtn.addEventListener('click', () => { resetRound(); });
+    homeBtn.addEventListener('click', () => {
+      // 게임 오버 상태 정리 후 홈(스플래시)으로 복귀
+      scoreResetNeeded = true;   // 다음 시작 시 점수·생명 전부 초기화
+      resetRound();              // 오버레이 숨김 + 라운드 상태 리셋
+      const splashEl = document.getElementById('splash');
+      splashEl.classList.remove('hidden');
+    });
+
+    // 드래그 전용 조작: 뒤로(좌측) 드래그 거리 → 각도+세기, 매 라운드 초기화
+    let dragging = false, dragStart = null;
+    const el = renderer.domElement;
+    el.addEventListener('pointerdown', (e) => {
+      if (state !== 'aim') return;
+      dragging = true;
+      dragStart = { x: e.clientX, y: e.clientY };
+      el.setPointerCapture(e.pointerId);
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const dx = e.clientX - dragStart.x, dy = e.clientY - dragStart.y;
+      // 뒤로(좌측) 드래그: dx가 음수일수록 세기 증가
+      const pullDist = Math.max(0, -dx);
+      powerPct = THREE.MathUtils.clamp(pullDist / 200, 0, 1);
+      // 위아래 드래그: 각도 조절 (위로 끌면 높은 각도)
+      angleDeg = THREE.MathUtils.clamp(45 - dy * .3, MIN_ANGLE, MAX_ANGLE);
+      // 새총 당기기 연출: 세기에 따라 포대가 뒤로
+      const pull = restPull.clone().add(new THREE.Vector3(-.55*powerPct*Math.cos(angleDeg*Math.PI/180), -.55*powerPct*Math.sin(angleDeg*Math.PI/180), 0));
+      setBand(pull);
+    });
+    el.addEventListener('pointerup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try { el.releasePointerCapture(e.pointerId); } catch {}
+      // 최소 세기 미만이면 취소 (실수로 탭했을 때 방지)
+      if (powerPct < .05) {
+        angleDeg = 45; powerPct = 0;
+        setBand(restPull);
+        return;
+      }
+      launch();
+    });
+
+    // 키보드 조작 제거됨 — 드래그 전용
+
+    // ===== 판정 =====
+    function inBasket(p) {
+      const dx = p.x - BASKET_POS.x, dz = p.z - BASKET_POS.z;
+      // 바구니 입구 외경 ≈ 0.81 (innerLip torus 0.78 + 관 반경 0.028)
+      // 판정 반경 0.5: 림 안쪽 통과만 인정. 이전 0.85면 림 밖(.55~.85)으로
+      //   빗나간 궤적도 골인으로 잡혀 낮은 각도까지 전부 성공했다.
+      // y는 바닥(.1)~1.0: 림(0.86)을 살짝 넘는 "통과하는 순간"까지 포착
+      return Math.hypot(dx, dz) < .5 && p.y < 1.0 && p.y > .1;
+    }
+    function mouseHeadWorld(ms) {
+      const v = new THREE.Vector3(0, 1.25, .46);
+      ms.m.group.localToWorld(v);
+      return v;
+    }
+    let pendingFinish = null; // {kind,title,msg} — 지연 표시 대기 중
+    function finish(kind, title, msg, delaySec = 0) {
+      state = kind;
+      endTimer = 0;
+      // 게임 오버(마지막 치즈 소멸)만 오버레이 팝업 — 그 외 발사 결과는 중앙 플래시
+      if (kind === 'gameover') {
+        if (delaySec > 0) {
+          pendingFinish = { kind, title, msg, t: 0 };
+        } else {
+          showResult(kind, title, msg);
+        }
+      } else {
+        if (delaySec > 0) {
+          pendingFinish = { kind, title, msg, t: 0 };
+        } else {
+          showFlash(kind, title);
+          setTimeout(resetRound, 2500);
+        }
+      }
+    }
+
+    // ===== 애니메이션 루프 =====
+    let grip = 0; // 0~1 — 양팔이 가운데로 모인 정도 (드래그 중 1, 아니면 0으로 복원)
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), .05);
+      const t = clock.elapsedTime;
+
+      // 고양이 유희
+      cat.position.y = CAT_POS.y + Math.sin(t*2.2)*.045;
+      tail.rotation.x = Math.sin(t*2.4)*.11;
+      tail.rotation.z = Math.sin(t*1.8)*.10;
+      // 새총 당기는 동안 양팔을 가운데로 모아 쥔 자세, 놓으면 부드럽게 복원
+      // 드래그 중: 빠르게 모으기 / 드래그 종료(발사): 즉시 복귀
+      const gripTarget = (dragging && state === 'aim') ? 1 : 0;
+      if (gripTarget === 0) {
+        grip = 0; // 발사 시 즉시 원래대로
+      } else {
+        grip += (gripTarget - grip) * Math.min(1, dt*18); // 드래그 중 빠르게 모으기
+      }
+      const idle = Math.sin(t*2.1)*.035;
+      armR.rotation.set(-grip*.9, -grip*.55, -grip*.55 + idle);
+      armL.rotation.set(-grip*.9,  grip*.55,  grip*.55 + idle);
+
+      // 쥐 배회 — 가로채기('eaten') 중에는 점프 연출이 위치를 소유하므로 배회 루프가 건드리지 않음
+      for (const ms of mouseState) {
+        const m = ms.m.group;
+        const isEating = (state === 'eaten' && eatMouse === ms && eatTimer < .45);
+        if (!isEating) {
+          ms.t += dt * ms.speed;
+          let px = ms.home.x + Math.sin(ms.t*1.3)*MOUSE_ORBIT_AMP.x;
+          let pz = ms.home.z + Math.cos(ms.t*.9)*MOUSE_ORBIT_AMP.z;
+          // 바구니 회피: 바구니 중심 반경 1.15 안으로 들어오면 밖으로 밀어냄
+          const bdx = px - BASKET_POS.x, bdz = pz - BASKET_POS.z;
+          const bd = Math.hypot(bdx, bdz);
+          if (bd < 1.15 && bd > 1e-4) { px = BASKET_POS.x + bdx/bd*1.15; pz = BASKET_POS.z + bdz/bd*1.15; }
+          m.position.x = px; m.position.z = pz;
+          m.position.y = Math.sin(ms.t*4)*.02;
+          // 진행 방향을 바라봄
+          const nt = ms.t + dt;
+          let npx = ms.home.x + Math.sin(nt*1.3)*1.1;
+          let npz = ms.home.z + Math.cos(nt*.9)*.9;
+          const ndx = npx - BASKET_POS.x, ndz = npz - BASKET_POS.z;
+          const nd = Math.hypot(ndx, ndz);
+          if (nd < 1.15 && nd > 1e-4) { npx = BASKET_POS.x + ndx/nd*1.15; npz = BASKET_POS.z + ndz/nd*1.15; }
+          const vx = npx - px, vz = npz - pz;
+          if (vx*vx + vz*vz > 1e-8) m.rotation.y = Math.atan2(vx, vz);
+          // 걷기 모션: 다리를 앞뒤로 번갈아 흔들기 (진행 속도에 비례해 진폭)
+          const speedNow = Math.sqrt(vx*vx + vz*vz)/Math.max(dt, 1e-4);
+          const swingAmp = THREE.MathUtils.clamp(speedNow*.55, .12, .6);
+          for (const lp of ms.m.legs) {
+            lp.g.rotation.x = Math.sin(ms.t*7 + lp.phase) * swingAmp;
+          }
+        }
+        ms.m.tail.rotation.x = Math.sin(ms.t*2.4)*.09;
+        ms.m.earParts[0].rotation.z = Math.sin(ms.t*1.3)*.018;
+        ms.m.earParts[1].rotation.z = -Math.sin(ms.t*1.3)*.018;
+      }
+      // 쥐-쥐 충돌: 겹치면 서로 밀어내서 통과하지 못하게 (반복 2회로 안정화)
+      for (let it = 0; it < 2; it++) {
+        for (let i = 0; i < mouseState.length; i++) {
+          for (let j = i+1; j < mouseState.length; j++) {
+            const a = mouseState[i].m.group.position, b = mouseState[j].m.group.position;
+            let dx = b.x - a.x, dz = b.z - a.z;
+            let d = Math.hypot(dx, dz);
+            const minDist = 1.0;
+            if (d < minDist) {
+              if (d < 1e-4) { dx = 1; dz = 0; d = 1; }
+              const push = (minDist - d) / 2;
+              const ux = dx/d, uz = dz/d;
+              a.x -= ux*push; a.z -= uz*push;
+              b.x += ux*push; b.z += uz*push;
+            }
+          }
+        }
+      }
+
+      if (state === 'flying') {
+        cheeseVel.y += G*dt;
+        cheese.position.addScaledVector(cheeseVel, dt);
+        cheese.rotation.z -= cheeseVel.x*dt*.25;
+        cheese.rotation.x += dt*2;
+        // 바구니 득점
+        if (inBasket(cheese.position)) {
+          score++; scoreEl.textContent = score;
+          cheese.visible = false;
+          finish('won', '성공!', '치즈가 바구니에 들어갔어요! +1점');
+        }
+        // 쥐 가로채기: 치즈가 그 쥐 "머리 바로 위" 영역에 도달할 때만 점프해 가로챔
+        // 이전 버그: dHoriz < 3.1 (수평 원형 판정)이라 치즈가 이미 쥐를 오른쪽으로
+        //   넘겨 비행 중인 순간에도 제자리에서 뺏어 먹는 일이 발생했다.
+        // → 수직 판정만 사용: 머리 정사각형 상단(y+0.1 ~ y+1.2) 내 + 수평 반경 0.9.
+        //   치즈가 쥐보다 오른쪽으로 넘어가면(이미 통과한 상태) 절대 걸리지 않는다.
+        //   (쥐 홈 x=3.5 기준, 바구니 x=6.5까지 약 3.0 거리 — 중간 궤적이야말로
+        //    머리 위로 지나가는 구간이므로 골인과 충돌 없음)
+        else {
+          for (const ms of mouseState) {
+            const head = mouseHeadWorld(ms);
+            const dyUp = cheese.position.y - head.y;
+            const dHoriz = Math.hypot(cheese.position.x - head.x, cheese.position.z - head.z);
+            // 시뮬레이션 결과(91개 각도×세기 조합): 현재 조건(won=0, eaten=57)은
+            //   - 상승 직에서도 발동 → 골인 경로에서 무조건 가로침
+            //   - dyUp 상한 4.0 과 dHoriz 2.5 가 너무 넓음
+            // 해결: 하락 직(vy<0)에서만 판정 + 위쪽 여유 0.8m + 수평 반경 2.2m
+            if (cheeseVel.y < 0 && dyUp >= -.5 && dyUp <= .8 && dHoriz < 2.2) {
+              eatMouse = ms; eatTimer = 0;
+              // 치즈는 즉시 사라지지 않고, 쥐의 입으로 향해 0.25초간 날아가며 축소되는 연출
+              cheese.userData.eatTarget = new THREE.Vector3(head.x, head.y + .35, head.z);
+              state = 'eating';
+              break;
+            }
+          }
+        }
+        // 바닥 / 범위 밖 — 완전히 떨어진 후 3초 뒤에 결과 알림
+        // 치즈는 사라지지 않고 바닥에 떨어진 채로 보이게 함 (y 클램프 + 회전 정지)
+        if (state === 'flying' && (cheese.position.y <= .15 || Math.abs(cheese.position.x) > 14 || Math.abs(cheese.position.z) > 14)) {
+          cheese.position.y = .15;   // 바닥에 고정
+          loseLife('missed', '미스!', '바구니에 들어가지 못했어요. 치즈 -1', 3);
+        }
+      }
+
+      // 쥐가 가로챈 직후: 치즈가 쥐의 입으로 0.25초간 날아가며 축소 → 그제서야 변신+결과
+      if (state === 'eating' && eatMouse) {
+        eatTimer += dt;
+        const target = cheese.userData.eatTarget;
+        const k = Math.min(eatTimer / .25, 1);
+        cheese.position.lerp(target, 1 - Math.pow(1 - k, 3));   // easeOut
+        cheese.scale.setScalar(Math.max(.05, .55 * (1 - k)));
+        cheese.rotation.x += dt * 14;
+        if (k >= 1) {
+          cheese.visible = false;
+          // 기어다니던 쥐(몸통·머리·귀·다리·꼬리)를 전부 숨기고 박수 쥐로 대체
+          for (const p of eatMouse.m.crawlParts) p.visible = false;
+          eatMouse.m.cheerBody.visible = true;
+          state = 'eaten';
+          loseLife('eaten', '실패!', '쥐가 점프해서 치즈를 가로채 먹어 버렸어요! 치즈 -1', 3);
+        }
+      }
+
+      // 발사 결과 지연 표시: 연출 완료 후 3초가 지나면 표시
+      if (pendingFinish) {
+        pendingFinish.t += dt;
+        if (pendingFinish.t >= 3) {
+          if (pendingFinish.kind === 'gameover') {
+            // 게임 오버: 오버레이 팝업 유지 — "다시 시작"/"홈" 버튼으로 수동 전환
+            showResult(pendingFinish.kind, pendingFinish.title, pendingFinish.msg);
+          } else {
+            // 그 외(won/missed/eaten): 중앙 플래시 → 2.5초 후 자동 다음 라운드
+            showFlash(pendingFinish.kind, pendingFinish.title);
+            setTimeout(resetRound, 2500);
+          }
+          pendingFinish = null;
+        }
+      }
+
+      // 먹기 연출: 기존 쥐가 박수 쥐로 변신한 채 3초 동안 박수
+      if (state === 'eaten' && eatMouse) {
+        eatTimer += dt;
+        const m = eatMouse.m;
+        const cm = m.cheerBody;
+        // 상하로 뛰며 박수 — sin 피크마다 손이 마주치는 박수 리듬
+        const clapPhase = Math.sin(eatTimer * 8);       // 약 1.27Hz 박수
+        m.group.position.y = Math.abs(clapPhase) * .18; // 뛰는 느낌
+        m.group.rotation.z = Math.sin(eatTimer * 4) * .08; // 살짝 흔들림
+        // 양손을 가운데로 모았다가 벌리는 박수 동작
+        const clap = Math.max(0, Math.sin(eatTimer * 8)); // 0~1, 피크 = 완전히 모인 자세
+        m.leftHand.rotation.set(-clap * 1.1, -clap * .5, -clap * .4);
+        m.rightHand.rotation.set(-clap * 1.1,  clap * .5,  clap * .4);
+        // 꼬리 흔들림
+        m.cheerTail.rotation.x = Math.sin(eatTimer * 6) * .25;
+      }
+
+      targetRing.material.opacity = .35 + Math.sin(t*3)*.15;
+      renderer.render(scene, camera);
+    }
+    resetRound();
+    animate();
+    addEventListener('resize', () => {
+      camera.left = -viewHeight*innerWidth/innerHeight/2; camera.right = viewHeight*innerWidth/innerHeight/2;
+      camera.top = viewHeight/2; camera.bottom = -viewHeight/2; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+  </script>
+  <div id="splash">
+    <div class="splash-particles" id="splashParticles"></div>
+    <svg class="splash-cheese" viewBox="0 0 160 140" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- front triangle face -->
+        <linearGradient id="cqFront" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#ffe27a"/>
+          <stop offset="50%" stop-color="#f2d453"/>
+          <stop offset="100%" stop-color="#d9a830"/>
+        </linearGradient>
+        <!-- top slanted face -->
+        <linearGradient id="cqTop" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#fff3b0"/>
+          <stop offset="100%" stop-color="#f5d060"/>
+        </linearGradient>
+        <!-- side face -->
+        <linearGradient id="cqSide" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#c49420"/>
+          <stop offset="100%" stop-color="#a87818"/>
+        </linearGradient>
+        <filter id="cqShadow" x="-20%" y="-20%" width="140%" height="160%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#00000060"/>
+        </filter>
+        <filter id="cqGlow" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="12" result="blur"/>
+          <feFlood flood-color="#f2d453" flood-opacity="0.35"/>
+          <feComposite in2="blur" operator="in"/>
+          <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      <g filter="url(#cqGlow)">
+        <g filter="url(#cqShadow)">
+          <!-- 3D triangular cheese wedge (isometric) -->
+          <!-- top slanted face: back edge to front edge -->
+          <polygon points="80,12 148,52 80,72 12,52" fill="url(#cqTop)" stroke="#8a6518" stroke-width="1.5" stroke-linejoin="round"/>
+          <!-- front triangular face -->
+          <polygon points="12,52 148,52 80,128" fill="url(#cqFront)" stroke="#8a6518" stroke-width="1.5" stroke-linejoin="round"/>
+          <!-- front face holes -->
+          <ellipse cx="56" cy="72" rx="6" ry="5" fill="#d99527" opacity=".7"/>
+          <ellipse cx="92" cy="80" rx="5" ry="4.5" fill="#d99527" opacity=".6"/>
+          <ellipse cx="72" cy="98" rx="4" ry="3.5" fill="#c48420" opacity=".55"/>
+          <ellipse cx="108" cy="66" rx="4" ry="3.5" fill="#d99527" opacity=".5"/>
+          <!-- top face holes -->
+          <ellipse cx="62" cy="42" rx="5" ry="3.5" fill="#d4a028" opacity=".5"/>
+          <ellipse cx="100" cy="48" rx="4" ry="3" fill="#d4a028" opacity=".45"/>
+          <!-- highlight along top-back edge -->
+          <polyline points="12,52 80,12 148,52" fill="none" stroke="#ffffff60" stroke-width="2" stroke-linecap="round"/>
+          <!-- subtle highlight on front face -->
+          <polygon points="40,58 120,58 80,108" fill="#ffffff10"/>
+        </g>
+      </g>
+    </svg>
+    <h1 class="splash-title">치즈 새총</h1>
+    <p class="splash-sub">고양이가 치즈를 쏴 바구니에 넣기 · 쥐가 가로채면 실패</p>
+    <button class="splash-btn" id="startBtn">시작하기</button>
+    <p class="splash-hint">치즈를 뒤로 드래그해 새총을 당기고 놓으면 발사됩니다</p>
+  </div>
+  <script type="module">
+    // 파티클 생성
+    const particlesEl = document.getElementById('splashParticles');
+    for (let i = 0; i < 24; i++) {
+      const p = document.createElement('div');
+      p.className = 'splash-particle';
+      p.style.left = (Math.random()*100)+'%';
+      p.style.top = (30+Math.random()*70)+'%';
+      p.style.setProperty('--dur', (2.5+Math.random()*3)+'s');
+      p.style.setProperty('--rise', -(20+Math.random()*60)+'px');
+      p.style.width = p.style.height = (3+Math.random()*5)+'px';
+      p.style.opacity = .2+Math.random()*.5;
+      if (Math.random()>.5) p.style.background = '#8fa3ff';
+      particlesEl.appendChild(p);
+    }
+    // 시작하기 버튼
+    const splash = document.getElementById('splash');
+    document.getElementById('startBtn').addEventListener('click', () => {
+      splash.classList.add('hidden');
+    });
+  </script>
+</body>
+</html>
